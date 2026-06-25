@@ -62,6 +62,24 @@ export class AgentState extends UMLContainer implements IUMLState {
     return [...bodies.map((element) => element.id), ...fallbackBodies.map((element) => element.id)];
   }
 
+  deserialize<T extends DeepPartial<Apollon.UMLModelElement>>(values: T, children?: Apollon.UMLModelElement[]): void {
+    super.deserialize(values, children);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ext = values as any;
+    const bodyIds = new Set<string>(Array.isArray(ext.bodies) ? ext.bodies : []);
+    const fallbackBodyIds = new Set<string>(Array.isArray(ext.fallbackBodies) ? ext.fallbackBodies : []);
+    const bodyChildren = (children ?? []).filter((c) => c.id && bodyIds.has(c.id as string));
+    const fallbackBodyChildren = (children ?? []).filter((c) => c.id && fallbackBodyIds.has(c.id as string));
+    this.hasBody = bodyChildren.length > 0;
+    this.hasFallbackBody = fallbackBodyChildren.length > 0;
+    let y = this.headerHeight;
+    for (const body of bodyChildren) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      y += (body as any).bounds?.height ?? 0;
+    }
+    this.dividerPosition = y;
+  }
+
   serialize(children: UMLElement[] = []): Apollon.UMLState {
     return {
       ...super.serialize(children),

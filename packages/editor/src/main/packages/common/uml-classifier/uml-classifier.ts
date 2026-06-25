@@ -63,6 +63,45 @@ export abstract class UMLClassifier extends UMLContainer implements IUMLClassifi
     assign<IUMLClassifier>(this, values);
   }
 
+  // Override to compute layout-derived fields immediately after deserialization.
+  //
+  // Root cause of separator flicker: ModelState.fromModel (called by importPatch)
+  // creates new element instances via `new UMLClassifier()` then `deserialize()`.
+  // Fields not in the external model format keep their constructor defaults:
+  //   hasAttributes = false, hasMethods = false, deviderPosition = 0
+  // The merge function then does { ...oldElement, ...newElement }, so these
+  // defaults OVERRIDE the correct values in oldElement → React renders with
+  // hasAttributes=false (first separator gone) and deviderPosition=0 (second
+  // separator jumps to top of element) for one frame → visible flicker.
+  //
+  // Fix: derive all three from the external model's `attributes`/`methods`
+  // arrays and from the stored bounds.height of each attribute child.
+  // This matches exactly what render() computes, so the merge result is
+  // stable and no layout correction is needed before the next paint.
+  deserialize<T extends DeepPartial<Apollon.UMLModelElement>>(values: T, children?: Apollon.UMLModelElement[]): void {
+    super.deserialize(values, children);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ext = values as any;
+    const attributeIds = new Set<string>(Array.isArray(ext.attributes) ? ext.attributes : []);
+    const methodIds = new Set<string>(Array.isArray(ext.methods) ? ext.methods : []);
+
+    const attrChildren = (children ?? []).filter((c) => c.id && attributeIds.has(c.id as string));
+    const methChildren = (children ?? []).filter((c) => c.id && methodIds.has(c.id as string));
+
+    this.hasAttributes = attrChildren.length > 0;
+    this.hasMethods = methChildren.length > 0;
+
+    // Compute deviderPosition (Y of the attributes/methods separator) from the
+    // stored heights of attribute children — the same formula render() uses.
+    // bounds.height is serialised in the external model so the value is exact.
+    let y = this.headerHeight;
+    for (const attr of attrChildren) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      y += (attr as any).bounds?.height ?? 0;
+    }
+    this.deviderPosition = y;
+  }
+
   abstract reorderChildren(children: IUMLElement[]): string[];
 
   serialize(children: UMLElement[] = []): Apollon.UMLClassifier {

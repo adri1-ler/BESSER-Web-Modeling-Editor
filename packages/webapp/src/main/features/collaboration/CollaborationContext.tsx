@@ -21,12 +21,14 @@ export interface CollaborationContextValue {
   users: CollabUser[];
   cursors: Record<string, CursorPosition>;
   sendModel: (model: unknown, diagramType?: string, diagramId?: string) => void;
+  sendPatch: (patch: unknown, diagramType?: string, diagramId?: string) => void;
   sendCursor: (x: number, y: number, diagramId?: string, coordSpace?: 'diagram' | 'pct') => void;
   sendTabChange: (diagramType: string, diagramId: string) => void;
   setCurrentDiagramType: (type: string) => void;
   setCurrentDiagramId: (id: string) => void;
   isRemoteUpdateRef: React.MutableRefObject<boolean>;
-  registerRemoteModelHandler: (handler: ((model: unknown, diagramType?: string, diagramId?: string) => void) | null) => void;
+  registerRemoteModelHandler: (handler: ((model: unknown, diagramType?: string, diagramId?: string, isInitialLoad?: boolean) => void) | null) => void;
+  registerRemotePatchHandler: (handler: ((patch: unknown, diagramType?: string, diagramId?: string) => void) | null) => void;
 }
 
 const CollaborationContext = createContext<CollaborationContextValue | null>(null);
@@ -42,13 +44,14 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(_urlSession);
   const [pendingDiagramType, setPendingDiagramType] = useState<string | undefined>(_urlType);
 
-  // Show the setup dialog immediately only when the page was opened via a shared
-  // link (?session= present) AND the user has never joined that session in this
-  // browser tab before (no sessionStorage marker).  A plain page reload keeps the
-  // ?session= in the URL but the marker is already set, so the dialog stays hidden.
-  const [showSetupDialog, setShowSetupDialog] = useState<boolean>(
-    () => !!_urlSession && !sessionStorage.getItem(`besser_collab_joined_${_urlSession}`),
-  );
+  // Show the setup dialog immediately when the page was reached via a shared link
+  // (?session= present) but NOT on a plain page reload (F5).
+  // performance.navigation.type === 1 means reload; anything else is a fresh navigation.
+  const [showSetupDialog, setShowSetupDialog] = useState<boolean>(() => {
+    if (!_urlSession) return false;
+    const navType = (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type;
+    return navType !== 'reload';
+  });
 
   // User identity — reset to empty/random each session (not persisted)
   const [userName, setUserName] = useState<string>('');
@@ -56,7 +59,8 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const isRemoteUpdateRef = useRef(false);
   const remoteUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const remoteHandlerRef = useRef<((model: unknown, diagramType?: string, diagramId?: string) => void) | null>(null);
+  const remoteHandlerRef = useRef<((model: unknown, diagramType?: string, diagramId?: string, isInitialLoad?: boolean) => void) | null>(null);
+  const remotePatchHandlerRef = useRef<((patch: unknown, diagramType?: string, diagramId?: string) => void) | null>(null);
   const currentDiagramTypeRef = useRef<string | null>(null);
   const currentDiagramIdRef = useRef<string | null>(null);
 
@@ -68,27 +72,32 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     currentDiagramIdRef.current = id;
   }, []);
 
-  const handleRemoteModel = useCallback((model: unknown, diagramType?: string, diagramId?: string) => {
-    // Only the diagram-type filter stays here (for non-UML editors).
-    // The diagram-ID filter lives in ApollonEditorComponent where reduxDiagramRef
-    // is always synchronously up-to-date — avoiding the stale-ref timing issue.
+  const handleRemoteModel = useCallback((model: unknown, diagramType?: string, diagramId?: string, isInitialLoad?: boolean) => {
     if (diagramType && currentDiagramTypeRef.current && diagramType !== currentDiagramTypeRef.current) return;
     isRemoteUpdateRef.current = true;
-    remoteHandlerRef.current?.(model, diagramType, diagramId);
-    // Clear-and-reset: isRemoteUpdateRef stays true throughout a drag stream and
-    // resets only 300 ms after the last received update (covers Apollon's internal
-    // ~50 ms subscription debounce with margin, without blocking local edits long).
+    remoteHandlerRef.current?.(model, diagramType, diagramId, isInitialLoad);
     if (remoteUpdateTimerRef.current) clearTimeout(remoteUpdateTimerRef.current);
     remoteUpdateTimerRef.current = setTimeout(() => {
       isRemoteUpdateRef.current = false;
     }, 300);
   }, []);
 
-  const { isConnected, myUserId, myColor, users, cursors, sendModel, sendCursor, sendTabChange } = useCollaboration({
+  const handleRemotePatch = useCallback((patch: unknown, diagramType?: string, diagramId?: string) => {
+    if (diagramType && currentDiagramTypeRef.current && diagramType !== currentDiagramTypeRef.current) return;
+    isRemoteUpdateRef.current = true;
+    remotePatchHandlerRef.current?.(patch, diagramType, diagramId);
+    if (remoteUpdateTimerRef.current) clearTimeout(remoteUpdateTimerRef.current);
+    remoteUpdateTimerRef.current = setTimeout(() => {
+      isRemoteUpdateRef.current = false;
+    }, 300);
+  }, []);
+
+  const { isConnected, myUserId, myColor, users, cursors, sendModel, sendPatch, sendCursor, sendTabChange } = useCollaboration({
     sessionId,
     userName,
     userColor,
     onRemoteModelUpdate: handleRemoteModel,
+    onRemotePatchUpdate: handleRemotePatch,
   });
 
   // "Collaborer" button clicked → show setup dialog before connecting.
@@ -113,8 +122,6 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     setPendingDiagramType(undefined);
 
     if (sid) {
-      // Mark as joined so a page reload doesn't re-show the dialog.
-      sessionStorage.setItem(`besser_collab_joined_${sid}`, '1');
       setSessionId(sid);
       const url = new URL(window.location.href);
       url.searchParams.set('session', sid);
@@ -137,8 +144,15 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const registerRemoteModelHandler = useCallback(
-    (handler: ((model: unknown, diagramType?: string, diagramId?: string) => void) | null) => {
+    (handler: ((model: unknown, diagramType?: string, diagramId?: string, isInitialLoad?: boolean) => void) | null) => {
       remoteHandlerRef.current = handler;
+    },
+    [],
+  );
+
+  const registerRemotePatchHandler = useCallback(
+    (handler: ((patch: unknown, diagramType?: string, diagramId?: string) => void) | null) => {
+      remotePatchHandlerRef.current = handler;
     },
     [],
   );
@@ -154,12 +168,14 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         users,
         cursors,
         sendModel,
+        sendPatch,
         sendCursor,
         sendTabChange,
         setCurrentDiagramType,
         setCurrentDiagramId,
         isRemoteUpdateRef,
         registerRemoteModelHandler,
+        registerRemotePatchHandler,
       }}
     >
       {children}

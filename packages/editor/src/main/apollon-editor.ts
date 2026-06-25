@@ -17,6 +17,7 @@ import * as Apollon from './typings';
 import { UMLDiagramType, UMLModel } from './typings';
 import { Dispatch } from './utils/actions/actions';
 import { debounce } from './utils/debounce';
+import { throttle } from './utils/throttle';
 import { delay } from './utils/delay';
 import { ErrorBoundary } from './components/controls/error-boundary/ErrorBoundary';
 import { replaceColorVariables } from './utils/replace-color-variables';
@@ -477,7 +478,7 @@ export class ApollonEditor {
     }
   };
 
-  private notifyModelSubscribers = debounce(() => {
+  private notifyModelSubscribers = throttle(() => {
     try {
       // if state not available -> do not emit changes
       if (!this.store) return;

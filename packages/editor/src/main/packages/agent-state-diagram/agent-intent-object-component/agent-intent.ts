@@ -60,13 +60,26 @@ export class AgentIntent extends UMLContainer implements IUMLState {
   }
 
   deserialize<T extends Apollon.UMLModelElement>(
-      values: T & { intent_description?: string },
-      children?: Apollon.UMLModelElement[],
-    ): void {
-      super.deserialize(values, children);
-      this.intent_description = values.intent_description || "";
-      
+    values: T & { intent_description?: string },
+    children?: Apollon.UMLModelElement[],
+  ): void {
+    super.deserialize(values, children);
+    this.intent_description = values.intent_description || "";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ext = values as any;
+    const bodyIds = new Set<string>(Array.isArray(ext.bodies) ? ext.bodies : []);
+    const bodyChildren = (children ?? []).filter((c) => c.id && bodyIds.has(c.id as string));
+    this.hasBody = bodyChildren.length > 0;
+    let y = this.headerHeight;
+    if (this.intent_description.trim().length > 0) {
+      y += AGENT_INTENT_DESCRIPTION_HEIGHT;
     }
+    for (const body of bodyChildren) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      y += (body as any).bounds?.height ?? 0;
+    }
+    this.deviderPosition = y;
+  }
 
   render(layer: ILayer, children: ILayoutable[] = []): ILayoutable[] {
     const bodies = children.filter((x): x is AgentIntentBody => x instanceof AgentIntentBody);

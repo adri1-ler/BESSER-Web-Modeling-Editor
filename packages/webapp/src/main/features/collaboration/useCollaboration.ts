@@ -33,8 +33,15 @@ interface Options {
   sessionId: string | null;
   userName: string;
   userColor: string;
-  /** Called when a remote user sends a full model update. */
-  onRemoteModelUpdate: (model: unknown, diagramType?: string, diagramId?: string) => void;
+  /**
+   * Called when a remote user sends a full model update.
+   * `isInitialLoad = true` means this is the room_state snapshot (joining a room)
+   * and the editor should load it via editor.model.
+   * `isInitialLoad = false` means a live model_update — only save to Redux, no visual load.
+   */
+  onRemoteModelUpdate: (model: unknown, diagramType?: string, diagramId?: string, isInitialLoad?: boolean) => void;
+  /** Called when a remote user sends a live patch (element drag). */
+  onRemotePatchUpdate: (patch: unknown, diagramType?: string, diagramId?: string) => void;
 }
 
 interface CollaborationAPI {
@@ -43,15 +50,17 @@ interface CollaborationAPI {
   myColor: string | null;
   users: CollabUser[];
   cursors: Record<string, CursorPosition>;
-  /** Send the full model to all peers (call after a local change). */
+  /** Send the full model to all peers (backend snapshot for late joiners). */
   sendModel: (model: unknown, diagramType?: string, diagramId?: string) => void;
+  /** Send a JSON patch to all peers (live drag — no full model replace on receiver). */
+  sendPatch: (patch: unknown, diagramType?: string, diagramId?: string) => void;
   /** Send cursor position to all peers. Throttled internally. */
   sendCursor: (x: number, y: number, diagramId?: string, coordSpace?: 'diagram' | 'pct') => void;
   /** Notify peers of the active diagram type and ID. */
   sendTabChange: (diagramType: string, diagramId: string) => void;
 }
 
-export function useCollaboration({ sessionId, userName, userColor, onRemoteModelUpdate }: Options): CollaborationAPI {
+export function useCollaboration({ sessionId, userName, userColor, onRemoteModelUpdate, onRemotePatchUpdate }: Options): CollaborationAPI {
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [myUserId, setMyUserId] = useState<string | null>(null);
@@ -59,9 +68,11 @@ export function useCollaboration({ sessionId, userName, userColor, onRemoteModel
   const [users, setUsers] = useState<CollabUser[]>([]);
   const [cursors, setCursors] = useState<Record<string, CursorPosition>>({});
 
-  // Keep callback ref stable so the WS handler always calls the latest version.
   const onRemoteRef = useRef(onRemoteModelUpdate);
   onRemoteRef.current = onRemoteModelUpdate;
+
+  const onRemotePatchRef = useRef(onRemotePatchUpdate);
+  onRemotePatchRef.current = onRemotePatchUpdate;
 
   // Throttle cursor sends to ~20 fps.
   const lastCursorTimeRef = useRef(0);
@@ -98,10 +109,10 @@ export function useCollaboration({ sessionId, userName, userColor, onRemoteModel
         case 'room_state':
           setMyUserId(data.user_id as string);
           setMyColor(data.color as string);
-          setUsers((data.users as CollabUser[]) || []);
-          // Pass diagramType/diagramId so the receiver can filter the model
-          // and avoid overwriting the wrong diagram on join.
-          if (data.model) onRemoteRef.current(data.model, data.diagramType as string | undefined, data.diagramId as string | undefined);
+          // Filter out the current user — the backend includes them in the list.
+          setUsers(((data.users as CollabUser[]) || []).filter((u) => u.user_id !== (data.user_id as string)));
+          // isInitialLoad=true: editor should load this via editor.model (one-time, no flicker concern).
+          if (data.model) onRemoteRef.current(data.model, data.diagramType as string | undefined, data.diagramId as string | undefined, true);
           break;
 
         case 'user_joined':
@@ -141,7 +152,15 @@ export function useCollaboration({ sessionId, userName, userColor, onRemoteModel
           break;
 
         case 'model_update':
-          onRemoteRef.current(data.model, data.diagramType as string | undefined, data.diagramId as string | undefined);
+          // isInitialLoad=false: this is a background snapshot, not an initial load.
+          // Receivers apply it to Redux/localStorage only — patches handle the visual sync.
+          onRemoteRef.current(data.model, data.diagramType as string | undefined, data.diagramId as string | undefined, false);
+          break;
+
+        case 'patch_update':
+          if (data.patch) {
+            onRemotePatchRef.current(data.patch, data.diagramType as string | undefined, data.diagramId as string | undefined);
+          }
           break;
 
         case 'cursor_move':
@@ -173,6 +192,12 @@ export function useCollaboration({ sessionId, userName, userColor, onRemoteModel
     }
   }, []);
 
+  const sendPatch = useCallback((patch: unknown, diagramType?: string, diagramId?: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'patch_update', patch, diagramType, diagramId }));
+    }
+  }, []);
+
   const sendCursor = useCallback((x: number, y: number, diagramId?: string, coordSpace?: 'diagram' | 'pct') => {
     const now = Date.now();
     if (now - lastCursorTimeRef.current < 50) return;
@@ -188,5 +213,5 @@ export function useCollaboration({ sessionId, userName, userColor, onRemoteModel
     }
   }, []);
 
-  return { isConnected, myUserId, myColor, users, cursors, sendModel, sendCursor, sendTabChange };
+  return { isConnected, myUserId, myColor, users, cursors, sendModel, sendPatch, sendCursor, sendTabChange };
 }
