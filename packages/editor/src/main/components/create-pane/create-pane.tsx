@@ -152,7 +152,13 @@ class CreatePaneComponent extends Component<Props, State> {
   }
 
   componentDidUpdate(prevProps: Props) {
-    this.props.setPalette(this.state.previews);
+    if (prevProps.type !== this.props.type || prevProps.colorEnabled !== this.props.colorEnabled) {
+      const newState = getInitialState(this.props);
+      this.setState(newState);
+      this.props.setPalette(newState.previews);
+    } else {
+      this.props.setPalette(this.state.previews);
+    }
   }
 
   getElementArray = (previews: PreviewElement[]) => {

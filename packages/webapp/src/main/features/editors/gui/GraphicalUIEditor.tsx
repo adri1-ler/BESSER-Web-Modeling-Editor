@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
 import type { Editor } from 'grapesjs';
+import { useCollaborationContext } from '../../collaboration/CollaborationContext';
 import './grapesjs-styles.css';
 import { getClassOptions, getEndsByClassId, getClassMetadata, getMethodsByClassId } from './diagram-helpers';
 import { chartConfigs } from './configs/chartConfigs';
@@ -30,6 +31,30 @@ export const GraphicalUIEditor: React.FC = () => {
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Collaboration
+  const { sendModel, registerRemoteModelHandler } = useCollaborationContext();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sendModelRef = useRef<any>(sendModel);
+  sendModelRef.current = sendModel;
+  // Separate flag for GrapesJS: auto-save debounce can be longer than UML (up to ~1.5s),
+  // so we use our own 2s lock to suppress the echo after a remote model load.
+  const grapesIsRemoteRef = useRef(false);
+  const grapesRemoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Register remote model handler (GrapesJS API: loadProjectData)
+  useEffect(() => {
+    registerRemoteModelHandler((model) => {
+      if (!editorRef.current || !isGrapesJSProjectData(model)) return;
+      grapesIsRemoteRef.current = true;
+      if (grapesRemoteTimerRef.current) clearTimeout(grapesRemoteTimerRef.current);
+      grapesRemoteTimerRef.current = setTimeout(() => {
+        grapesIsRemoteRef.current = false;
+      }, 2000);
+      editorRef.current.loadProjectData(model);
+    });
+    return () => registerRemoteModelHandler(null);
+  }, [registerRemoteModelHandler]);
+
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -58,6 +83,13 @@ export const GraphicalUIEditor: React.FC = () => {
 
       // Setup all editor features
       const cleanup = setupEditorFeatures(editor, setSaveStatus, saveIntervalRef, saveTimeoutRef);
+
+      // Collaboration: broadcast to peers after each successful auto-save
+      editor.on('storage:end', () => {
+        if (!grapesIsRemoteRef.current) {
+          sendModelRef.current(editor.getProjectData());
+        }
+      });
 
       const handleAssistantAutoGenerate = async () => {
         try {

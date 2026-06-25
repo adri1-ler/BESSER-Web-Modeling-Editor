@@ -23,10 +23,13 @@ import {
 } from '../../../app/store/workspaceSlice';
 import { ApollonEditorContext } from '../uml/apollon-editor-context';
 import { scaffoldObjectsFromClasses } from './scaffoldObjectsFromClasses';
+import type { CollabUser } from '../../collaboration/useCollaboration';
+import { useCollaborationContext } from '../../collaboration/CollaborationContext';
 
 interface DiagramTabsProps {
   onRequestTabSwitch?: (index: number) => Promise<boolean> | boolean;
   userModelValidationStatusById?: Record<string, QualityCheckState>;
+  collabUsers?: CollabUser[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -109,7 +112,9 @@ const isDiagramEmpty = (diagram: ProjectDiagram | undefined): boolean => {
 export const DiagramTabs: React.FC<DiagramTabsProps> = ({
   onRequestTabSwitch,
   userModelValidationStatusById,
+  collabUsers = [],
 }) => {
+  const { myUserId } = useCollaborationContext();
   const dispatch = useAppDispatch();
   const diagrams = useAppSelector(selectDiagramsForActiveType);
   const currentIndex = useAppSelector(selectActiveDiagramIndex);
@@ -362,6 +367,17 @@ export const DiagramTabs: React.FC<DiagramTabsProps> = ({
                         aria-label={`Validation status: ${validationBadge.label}`}
                       />
                     )}
+                    {collabUsers
+                      .filter((u) => u.user_id !== myUserId && u.currentDiagramId === diagram.id)
+                      .slice(0, 3)
+                      .map((u) => (
+                        <span
+                          key={u.user_id}
+                          title={u.name}
+                          style={{ backgroundColor: u.color }}
+                          className="inline-block size-2 rounded-full border border-white/30 shadow-sm"
+                        />
+                      ))}
                   </>
                 )}
 

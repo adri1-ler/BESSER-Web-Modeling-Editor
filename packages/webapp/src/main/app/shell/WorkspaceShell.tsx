@@ -61,6 +61,8 @@ const HelpGuideDialog = React.lazy(() =>
 import { KeyboardShortcutsDialog, useKeyboardShortcutsToggle } from '../../shared/dialogs/KeyboardShortcutsDialog';
 import { CommandPalette, useCommandPaletteShortcut, buildDefaultActions } from '../../shared/components/command-palette/CommandPalette';
 import { HiddenPerspectivesBanner } from '../../features/editors/HiddenPerspectivesBanner';
+import { CollaborationProvider, useCollaborationContext } from '../../features/collaboration/CollaborationContext';
+import { CollaborationPanel } from '../../features/collaboration/CollaborationPanel';
 
 export type { GeneratorType, GeneratorMenuMode } from './workspace-types';
 
@@ -130,7 +132,7 @@ const isModelEmpty = (model: unknown): boolean => {
   return !hasElements && !hasRelationships;
 };
 
-export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
+const WorkspaceShellContent: React.FC<WorkspaceShellProps> = ({
   children,
   onOpenProjectHub,
   onOpenTemplateDialog,
@@ -143,11 +145,17 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   onAssistantGenerate,
   onboarding,
 }) => {
+  const { users: collabUsers, sessionId, isConnected, myColor, startCollaboration } = useCollaborationContext();
   const navigate = useNavigate();
   const location = useLocation();
   const dispatch = useAppDispatch();
   const diagram = useAppSelector(selectActiveDiagram);
   const { currentProject, currentDiagramType, switchDiagramType, updateProject } = useProject();
+
+  const handleStartCollaboration = useCallback(() => {
+    if (diagram?.id) startCollaboration(diagram.id, currentDiagramType);
+  }, [diagram, currentDiagramType, startCollaboration]);
+
   const {
     isAuthenticated,
     username,
@@ -840,6 +848,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
             activeUmlType={activeUmlType}
             activeDiagramType={currentProject?.currentDiagramType ?? 'ClassDiagram'}
             project={currentProject}
+            collabUsers={collabUsers}
             onSwitchUml={handleMobileSwitchUml}
             onSwitchDiagramType={handleMobileSwitchDiagramType}
             onNavigate={handleMobileNavigate}
@@ -861,6 +870,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
           activeUmlType={activeUmlType}
           activeDiagramType={currentProject?.currentDiagramType ?? 'ClassDiagram'}
           project={currentProject}
+          collabUsers={collabUsers}
           onSwitchUml={(type) => {
             void handleSwitchUml(type);
           }}
@@ -876,10 +886,24 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
         <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <HiddenPerspectivesBanner />
           {location.pathname === '/' && (
-            <DiagramTabs
-              onRequestTabSwitch={handleRequestTabSwitch}
-              userModelValidationStatusById={userModelValidationStatusById}
-            />
+            <div className="flex items-center border-b border-border/50">
+              <div className="flex-1 min-w-0">
+                <DiagramTabs
+                  onRequestTabSwitch={handleRequestTabSwitch}
+                  userModelValidationStatusById={userModelValidationStatusById}
+                  collabUsers={collabUsers}
+                />
+              </div>
+              <div className="shrink-0 px-2">
+                <CollaborationPanel
+                  isConnected={isConnected}
+                  myColor={myColor}
+                  users={collabUsers}
+                  sessionId={sessionId}
+                  onStartCollaboration={handleStartCollaboration}
+                />
+              </div>
+            </div>
           )}
           <div className="relative min-h-0 flex-1 overflow-hidden">{children}</div>
 
@@ -1008,3 +1032,9 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
     </div>
   );
 };
+
+export const WorkspaceShell: React.FC<WorkspaceShellProps> = (props) => (
+  <CollaborationProvider>
+    <WorkspaceShellContent {...props} />
+  </CollaborationProvider>
+);

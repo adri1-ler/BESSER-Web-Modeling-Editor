@@ -592,22 +592,27 @@ const workspaceSlice = createSlice({
      */
     syncProjectFromStorage(state, action: PayloadAction<BesserProject>) {
       const p = action.payload;
-      state.project = p;
 
-      // Sync activeDiagramType if storage has a different value
-      if (p.currentDiagramType && p.currentDiagramType !== state.activeDiagramType) {
-        state.activeDiagramType = p.currentDiagramType;
-        state.editorOptions = deriveEditorOptions(state.editorOptions, p.currentDiagramType);
-      }
+      // Preserve the LOCAL user's navigation state so that cross-tab browser
+      // `storage` events (triggered by a collaborator on the same machine) never
+      // change what this user is looking at.
+      //
+      // We merge the incoming diagrams content (which may have new elements/models
+      // from the other tab) but keep our own currentDiagramType and
+      // currentDiagramIndices. This ensures:
+      //   • updateDiagramModelThunk reads getActiveDiagram(state.project, type)
+      //     using OUR index → writes to the correct diagram slot.
+      //   • activeDiagramType / activeDiagramIndex stay at local UI values.
+      state.project = {
+        ...p,
+        currentDiagramType: state.project?.currentDiagramType ?? p.currentDiagramType,
+        currentDiagramIndices: state.project?.currentDiagramIndices ?? p.currentDiagramIndices,
+      };
 
-      // Sync activeDiagramIndex if storage has a different value for the active type
-      const storedIndex = p.currentDiagramIndices?.[state.activeDiagramType];
-      if (storedIndex !== undefined && storedIndex !== state.activeDiagramIndex) {
-        state.activeDiagramIndex = storedIndex;
-      }
-
-      // Keep active diagram pointer in sync without reinitializing the editor
-      state.activeDiagram = getActiveDiagram(p, state.activeDiagramType) ?? state.activeDiagram;
+      // Keep active diagram pointer consistent with the local navigation.
+      const localDiagrams = state.project.diagrams[state.activeDiagramType];
+      const localDiagram = localDiagrams?.[state.activeDiagramIndex] ?? localDiagrams?.[0];
+      state.activeDiagram = localDiagram ?? state.activeDiagram;
     },
   },
   extraReducers: (builder) => {
@@ -813,20 +818,14 @@ const workspaceSlice = createSlice({
         const p = action.payload;
         state.project = p;
 
-        // Sync activeDiagramType if storage has a different value
-        if (p.currentDiagramType && p.currentDiagramType !== state.activeDiagramType) {
-          state.activeDiagramType = p.currentDiagramType;
-          state.editorOptions = deriveEditorOptions(state.editorOptions, p.currentDiagramType);
-        }
+        // Do NOT sync activeDiagramType or activeDiagramIndex — same reasoning as
+        // syncProjectFromStorage. Both are local UI state driven only by the local
+        // user's explicit navigation (switchDiagramTypeThunk / switchDiagramIndexThunk).
 
-        // Sync activeDiagramIndex if storage has a different value for the active type
-        const storedIndex = p.currentDiagramIndices?.[state.activeDiagramType];
-        if (storedIndex !== undefined && storedIndex !== state.activeDiagramIndex) {
-          state.activeDiagramIndex = storedIndex;
-        }
-
-        // Keep active diagram in sync without triggering editor reinit
-        state.activeDiagram = getActiveDiagram(p, state.activeDiagramType) ?? state.activeDiagram;
+        // Use the LOCAL index to keep the active diagram pointer correct.
+        const localDiagrams = p.diagrams[state.activeDiagramType];
+        const localDiagram = localDiagrams?.[state.activeDiagramIndex] ?? localDiagrams?.[0];
+        state.activeDiagram = localDiagram ?? state.activeDiagram;
       })
       .addCase(refreshProjectStateThunk.rejected, (_state, action) => {
         console.error('refreshProjectStateThunk failed:', action.error.message);

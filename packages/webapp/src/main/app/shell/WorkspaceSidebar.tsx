@@ -3,6 +3,8 @@ import { UMLDiagramType } from '@besser/wme';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { BesserProject, SupportedDiagramType } from '../../shared/types/project';
+import type { CollabUser } from '../../features/collaboration/useCollaboration';
+import { useCollaborationContext } from '../../features/collaboration/CollaborationContext';
 import { isPerspectiveVisible, toSupportedDiagramType } from '../../shared/types/project';
 import {
   AGENT_ROUTE_ITEMS,
@@ -26,11 +28,33 @@ interface WorkspaceSidebarProps {
   activeUmlType: UMLDiagramType;
   activeDiagramType: SupportedDiagramType;
   project: BesserProject | null;
+  collabUsers?: CollabUser[];
   onSwitchUml: (type: UMLDiagramType) => void;
   onSwitchDiagramType: (type: SupportedDiagramType) => void;
   onNavigate: (path: string) => void;
   onToggleExpanded: () => void;
 }
+
+/** Small colored dots showing which collaboration users are on a given diagram type. */
+const CollabDots: React.FC<{ users: CollabUser[]; myUserId: string | null; diagramType: string }> = ({ users, myUserId, diagramType }) => {
+  const matching = users.filter((u) => u.user_id !== myUserId && u.currentDiagramType === diagramType);
+  if (matching.length === 0) return null;
+  return (
+    <span className="ml-auto flex items-center gap-0.5">
+      {matching.slice(0, 3).map((u) => (
+        <span
+          key={u.user_id}
+          title={u.name}
+          style={{ backgroundColor: u.color }}
+          className="inline-block size-2 rounded-full border border-white/30 shadow-sm"
+        />
+      ))}
+      {matching.length > 3 && (
+        <span className="text-[9px] font-bold text-muted-foreground">+{matching.length - 3}</span>
+      )}
+    </span>
+  );
+};
 
 /** Wraps children with a Tooltip when sidebar is collapsed, otherwise renders children directly. */
 const SidebarTooltip: React.FC<{ label: string; collapsed: boolean; children: React.ReactNode }> = ({ label, collapsed, children }) => {
@@ -60,11 +84,13 @@ const WorkspaceSidebarInner: React.FC<WorkspaceSidebarProps> = ({
   activeUmlType,
   activeDiagramType,
   project,
+  collabUsers = [],
   onSwitchUml,
   onSwitchDiagramType,
   onNavigate,
   onToggleExpanded,
 }) => {
+  const { myUserId } = useCollaborationContext();
   // When a non-UML editor (GUI / Quantum) is active, no UML button should appear selected
   const isNonUmlActive = activeDiagramType === 'GUINoCodeDiagram' || activeDiagramType === 'QuantumCircuitDiagram';
   const isAgentEditorActive = locationPath === '/' && !isNonUmlActive && activeUmlType === UMLDiagramType.AgentDiagram;
@@ -125,6 +151,7 @@ const WorkspaceSidebarInner: React.FC<WorkspaceSidebarProps> = ({
                 >
                   {item.icon}
                   {isSidebarExpanded && <span>{displayLabel}</span>}
+                  {isSidebarExpanded && <CollabDots users={collabUsers} myUserId={myUserId} diagramType={item.type} />}
                 </button>
               </SidebarTooltip>
             );
@@ -142,6 +169,7 @@ const WorkspaceSidebarInner: React.FC<WorkspaceSidebarProps> = ({
                 >
                   {item.icon}
                   {isSidebarExpanded && <span>{displayLabel}</span>}
+                  {isSidebarExpanded && <CollabDots users={collabUsers} myUserId={myUserId} diagramType={item.type} />}
                 </button>
               </SidebarTooltip>
               <div
@@ -189,6 +217,7 @@ const WorkspaceSidebarInner: React.FC<WorkspaceSidebarProps> = ({
               >
                 {item.icon}
                 {isSidebarExpanded && <span>{displayLabel}</span>}
+                {isSidebarExpanded && <CollabDots users={collabUsers} myUserId={myUserId} diagramType={item.type} />}
               </button>
             </SidebarTooltip>
           );

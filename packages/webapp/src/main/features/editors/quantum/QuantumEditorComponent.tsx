@@ -1,4 +1,5 @@
 import React, { useRef, useCallback, useState, useEffect, useMemo } from 'react';
+import { useCollaborationContext } from '../../collaboration/CollaborationContext';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { GATES } from './constants';
@@ -77,6 +78,28 @@ export function QuantumEditorComponent(): JSX.Element {
 
     // Auto-save - pass project ID to prevent saving stale data during project switch
     useAutoSave(circuit, saveCircuit, currentProject?.id);
+
+    // --- Collaboration ---
+    const { sendModel, isRemoteUpdateRef, registerRemoteModelHandler } = useCollaborationContext();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sendModelRef = useRef<any>(sendModel);
+    sendModelRef.current = sendModel;
+
+    // Broadcast circuit changes to peers (skip if the change came from a remote update)
+    useEffect(() => {
+        if (!isRemoteUpdateRef.current) {
+            sendModelRef.current(circuit);
+        }
+    }, [circuit]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Register handler so the context can push remote models into this editor
+    useEffect(() => {
+        registerRemoteModelHandler((model) => {
+            setCircuit(model as Circuit);
+        });
+        return () => registerRemoteModelHandler(null);
+    }, [registerRemoteModelHandler, setCircuit]);
+    // --- End collaboration ---
 
     // Drag and drop
     const {

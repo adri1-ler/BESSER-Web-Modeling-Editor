@@ -48,3 +48,9 @@ export type { Patch } from './services/patcher';
 // Export only the UMLModelCompat type for compatibility purposes
 // Provides type definitions for compatibility with different UML model versions
 export type { UMLModelCompat } from './compat';
+
+// Export diagram-to-element-type mapping so the webapp can validate that
+// elements belong to the correct diagram type (prevent cross-diagram pollution).
+export { UMLElementsForDiagram } from './packages/uml-element-type';
+export { ColorLegendElementType } from './packages/common/color-legend';
+export { CommentsElementType } from './packages/common/comments';
