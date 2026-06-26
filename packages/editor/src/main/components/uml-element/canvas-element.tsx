@@ -115,8 +115,6 @@ class CanvasElementComponent extends Component<Props> {
         {...props}
         {...element.bounds}
         overflow="visible"
-        pointerEvents={moving ? 'none' : undefined}
-        fillOpacity={moving ? 0.7 : undefined}
         fill={highlight}
       >
         <ElementComponent fillColor={highlight} element={UMLElementRepository.get(element)}>

@@ -18,6 +18,7 @@ export interface CollaborationContextValue {
   isConnected: boolean;
   myColor: string | null;
   myUserId: string | null;
+  myName: string | null;
   users: CollabUser[];
   cursors: Record<string, CursorPosition>;
   sendModel: (model: unknown, diagramType?: string, diagramId?: string) => void;
@@ -165,6 +166,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         isConnected,
         myColor,
         myUserId,
+        myName: isConnected ? userName : null,
         users,
         cursors,
         sendModel,

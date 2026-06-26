@@ -18,13 +18,9 @@ export const CollaborationPanel: React.FC<Props> = ({
   onStartCollaboration,
 }) => {
   const [copied, setCopied] = useState(false);
-  const { myUserId } = useCollaborationContext();
+  const { myUserId, myName } = useCollaborationContext();
+  const myInitials = myName ? myName.slice(0, 2).toUpperCase() : '?';
 
-  // Find own user entry to display initials (populated after joining)
-  const myUser = users.find((u) => u.user_id === myUserId);
-  const myDisplayName = myUser?.name || 'Moi';
-
-  // Exclude the current user from the peer list — they are already shown via the "Moi" dot.
   const otherUsers = users.filter((u) => u.user_id !== myUserId);
 
   const handleClick = () => {
@@ -65,21 +61,22 @@ export const CollaborationPanel: React.FC<Props> = ({
                 border: '2px solid white',
                 marginLeft: '-4px',
                 boxShadow: '0 0 0 1px rgba(0,0,0,0.15)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
                 fontSize: '9px',
+                lineHeight: '18px',
+                textAlign: 'center',
                 color: 'white',
                 fontWeight: 700,
+                userSelect: 'none',
+                boxSizing: 'border-box',
               }}
             >
-              {u.name.slice(0, 2)}
+              {u.name.slice(0, 2).toUpperCase()}
             </div>
           ))}
           {/* My own dot */}
           {myColor && (
             <div
-              title={myDisplayName}
+              title={myName ?? ''}
               style={{
                 width: 22,
                 height: 22,
@@ -88,15 +85,16 @@ export const CollaborationPanel: React.FC<Props> = ({
                 border: '2px solid white',
                 marginLeft: '-4px',
                 boxShadow: `0 0 0 2px ${myColor}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
                 fontSize: '9px',
+                lineHeight: '18px',
+                textAlign: 'center',
                 color: 'white',
                 fontWeight: 700,
+                userSelect: 'none',
+                boxSizing: 'border-box',
               }}
             >
-              {myDisplayName.slice(0, 2).toUpperCase()}
+              {myInitials}
             </div>
           )}
         </div>

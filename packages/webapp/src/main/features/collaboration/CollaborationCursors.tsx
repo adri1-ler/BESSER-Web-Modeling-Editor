@@ -7,26 +7,15 @@ interface Props {
   activeDiagramId?: string;
 }
 
-/**
- * Force a React re-render whenever the local user zooms or scrolls inside the
- * editor, so that cursor positions computed from the SVG CTM stay accurate.
- * Uses a single rAF per event burst to avoid thrashing.
- */
 function useEditorTransformWatcher() {
   const [, setTick] = useState(0);
   useEffect(() => {
-    // Trigger once after mount so containerRef is non-null for the first cursor render.
     setTick((t) => t + 1);
-
     let rafId: number | null = null;
     const trigger = () => {
       if (rafId !== null) return;
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        setTick((t) => t + 1);
-      });
+      rafId = requestAnimationFrame(() => { rafId = null; setTick((t) => t + 1); });
     };
-    // wheel changes zoom inside Apollon; scroll changes pan
     window.addEventListener('wheel', trigger, { passive: true });
     window.addEventListener('scroll', trigger, { passive: true, capture: true });
     return () => {
@@ -37,31 +26,18 @@ function useEditorTransformWatcher() {
   }, []);
 }
 
-/**
- * Convert a cursor position to { left, top } in pixels relative to `container`.
- *
- * - 'diagram' mode: use the SVG CTM so zoom/scroll are accounted for.
- * - 'pct' mode (or missing): treat x/y as 0–1 fractions of the container.
- */
-function toContainerPx(
-  cursor: CursorPosition,
-  container: HTMLDivElement,
-): { left: number; top: number } | null {
+function toContainerPx(cursor: CursorPosition, container: HTMLDivElement): { left: number; top: number } | null {
   const rect = container.getBoundingClientRect();
-
   if (cursor.coordSpace === 'diagram') {
     const svg = document.querySelector<SVGSVGElement>('svg#modeling-editor-canvas');
     if (!svg) return null;
     const ctm = svg.getScreenCTM();
     if (!ctm) return null;
     const pt = svg.createSVGPoint();
-    pt.x = cursor.x;
-    pt.y = cursor.y;
+    pt.x = cursor.x; pt.y = cursor.y;
     const screen = pt.matrixTransform(ctm);
     return { left: screen.x - rect.left, top: screen.y - rect.top };
   }
-
-  // Percentage fallback
   return { left: cursor.x * rect.width, top: cursor.y * rect.height };
 }
 
@@ -81,10 +57,10 @@ export const CollaborationCursors: React.FC<Props> = ({ cursors, activeDiagramTy
       ref={containerRef}
       style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}
     >
+      {/* Remote user cursors */}
       {filtered.map((cursor) => {
         const pos = containerRef.current ? toContainerPx(cursor, containerRef.current) : null;
         if (!pos) return null;
-
         return (
           <div
             key={cursor.user_id}
